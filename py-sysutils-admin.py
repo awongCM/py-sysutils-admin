@@ -35,6 +35,13 @@ def process_monitor():
     else:
       print(pinfo)
 
+# Disk monitor
+def disk_monitor():
+  statvfs = os.statvfs('/')
+  print(statvfs.f_frsize * statvfs.f_blocks) # Size of filesystem in bytes
+  print(statvfs.f_frsize * statvfs.f_bfree)  # Actual number of bytes
+  print(statvfs.f_frsize * statvfs.f_bavail) # Number of free bytes that ordinary users
+
 # Network monitor
 def network_monitor():
   
@@ -63,7 +70,7 @@ def main():
   print("Available options")
   print("======= c - cpu and memory =========")
   print("======= n - network  =========")
-  print("======= d - disk(TODO) =========")
+  print("======= d - disk =========")
 
   monitor_type = input("Enter your monitoring type: ")
 
@@ -71,6 +78,8 @@ def main():
     process_monitor()
   elif monitor_type == 'n':
     network_monitor()
+  elif monitor_type == 'd':
+    disk_monitor()
   else:
     print('Program ends here')
 
