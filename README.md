@@ -1,6 +1,11 @@
 # py-sysutils-admin
 
-## TODOs
+## Features (TODOs)
+1. CPU & Memory Monitoring
+2. Network Monitoring
+3. Disk Usage
+
+## References
 http://docs.python-guide.org/en/latest/scenarios/admin/
 
 ## License
