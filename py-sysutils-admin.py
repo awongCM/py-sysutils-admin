@@ -1,22 +1,45 @@
 from __future__ import print_function
 import os 
-from psutil import(cpu_percent, virtual_memory, __version__, process_iter)
+from psutil import(
+  cpu_percent, 
+  virtual_memory,  
+  process_iter,
+  __version__)
 import psutil
 import time
+
 
 psutil_version = __version__
 cpu_percent = cpu_percent()
 system_memory= virtual_memory()
 system_memory_in_gb = virtual_memory()[0]/2.**30
 
-print(psutil_version) # Psutil version
-print("#-------------------#")
-print("#-------------------#")
-print(cpu_percent) #CPU Percent
-print(system_memory) #Virtual Memory
-print("#-------------------#")
-print("#-------------------#")
-print('Memory (in GB): ', system_memory_in_gb)
+app_title ='''
+Welcome to PySysUtils Admin tool
+'''.upper()
+
+print(app_title)
+
+print('Current PSUtil Version: {}'.format(psutil_version)) # Psutil version
+print("######-------------------------------------######")
+print("######-------------------------------------######")
+print("######-------------------------------------######")
+print('CPU Percentage(%) in used: {}'.format(cpu_percent)) #CPU Percent
+print("######-------------------------------------######")
+print("######-------------------------------------######")
+print("######-------------------------------------######")
+# print(system_memory) #Virtual Memory
+print('Total Memory: {}'.format(system_memory.total))
+print('Available Memory: {}'.format(system_memory.available))
+print('Percent Memory: {}'.format(system_memory.percent))
+print('Used Memory: {}'.format(system_memory.used))
+print('Free Memory: {}'.format(system_memory.free))
+print('Active Memory: {}'.format(system_memory.active))
+print('Inactive Memory: {}'.format(system_memory.inactive))
+print("######-------------------------------------######")
+print("######-------------------------------------######")
+print("######-------------------------------------######")
+print('Memory: {} GB'.format(system_memory_in_gb))
 
 # Process Monitor
 def process_monitor():
