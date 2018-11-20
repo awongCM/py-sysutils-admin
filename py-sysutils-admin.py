@@ -7,6 +7,8 @@ from psutil import(
   __version__)
 import psutil
 import time
+import sys
+from math import ceil
 
 
 psutil_version = __version__
@@ -42,7 +44,7 @@ print("######-------------------------------------######")
 print('Memory: {} GB'.format(system_memory_in_gb))
 
 # Process Monitor
-def process_monitor():
+def cpu_mem_monitor():
   for proc in process_iter():
     try:
       pinfo = {
@@ -51,12 +53,11 @@ def process_monitor():
         "username": proc.username(),
         "create_time": proc.create_time(),
         "cpu_times": proc.cpu_times(),
-        "memory_usage_percent": proc.memory_percent()
+        "memory_usage_percent": ceil(proc.memory_percent() * 100) / 100.0
       }
-    except psutil.NoSuchProcess:
-      pass
-    else:
-      print(pinfo)
+      print("Process info", pinfo)
+    except:
+      print("Oops!", sys.exc_info()[0], "occured",)
 
 # Disk monitor
 def disk_monitor():
@@ -95,10 +96,10 @@ def main():
   print("======= n - network  =========")
   print("======= d - disk =========")
 
-  monitor_type = input("Enter your monitoring type: ")
+  monitor_type = input("Choose your monitoring type: ")
 
   if monitor_type == 'c':
-    process_monitor()
+    cpu_mem_monitor()
   elif monitor_type == 'n':
     network_monitor()
   elif monitor_type == 'd':
