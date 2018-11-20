@@ -89,6 +89,12 @@ def sent_sat(value):
   print ("%0.3f" % convert_to_gbit(value))
 
 
+def check_input(monitor_type):
+  if monitor_type == 'c' or monitor_type == 'n' or monitor_type == 'd':
+    return True
+  else:
+    return False
+
 # Main Program starts
 def main():
   print("Available options")
@@ -96,7 +102,14 @@ def main():
   print("======= n - network  =========")
   print("======= d - disk =========")
 
-  monitor_type = input("Choose your monitoring type: ")
+  while True:
+    monitor_type = input("Choose your monitoring type: ")
+    
+    if not check_input(monitor_type):
+      print('Incorrect option. Please try again.')
+      continue
+    else:
+      break
 
   if monitor_type == 'c':
     cpu_mem_monitor()
@@ -104,7 +117,5 @@ def main():
     network_monitor()
   elif monitor_type == 'd':
     disk_monitor()
-  else:
-    print('Program ends here')
 
 main()
