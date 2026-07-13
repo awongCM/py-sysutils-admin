@@ -10,6 +10,9 @@ from pysysutils.collectors.disk import collect_disk
 from pysysutils.collectors.memory import collect_memory
 from pysysutils.collectors.network import collect_network
 from pysysutils.collectors.processes import collect_processes
+from pysysutils.collectors.battery_status import collect_battery_status
+from pysysutils.collectors.battery_health import collect_battery_health
+from pysysutils.health import evaluate_snapshot, exit_code_for, thresholds_from_cli
 from pysysutils.formatters.json_fmt import to_json
 from pysysutils.formatters.table import (
     _render_battery,
@@ -21,7 +24,9 @@ from pysysutils.formatters.table import (
     render_snapshot,
 )
 from pysysutils.models import (
+    BatteryHealthSnapshot,
     BatterySnapshot,
+    BatteryStatusSnapshot,
     CpuSnapshot,
     DiskSnapshot,
     MemorySnapshot,
@@ -106,6 +111,46 @@ def processes(
 def network(format: str = typer.Option("table", "--format")):
     """Show network counters."""
     _emit(collect_network(), format)
+
+
+@app.command()
+def battery(
+    format: str = typer.Option("table", "--format"),
+    health: bool = typer.Option(False, "--health", help="Include battery health metrics"),
+):
+    """Show battery status and optional health details."""
+    snap = BatterySnapshot(
+        status=collect_battery_status(),
+        health=collect_battery_health() if health else BatteryHealthSnapshot(
+            False, None, None, None, None, None
+        ),
+    )
+    _emit(snap, format)
+
+
+@app.command()
+def check(
+    format: str = typer.Option("table", "--format"),
+    cpu_max: float | None = typer.Option(None, "--cpu-max"),
+    mem_max: float | None = typer.Option(None, "--mem-max"),
+    disk_max: float | None = typer.Option(None, "--disk-max"),
+    battery_min: float | None = typer.Option(None, "--battery-min"),
+    battery_health_min: float | None = typer.Option(None, "--battery-health-min"),
+):
+    """Automation health gate with configurable thresholds and exit codes."""
+    thresholds = thresholds_from_cli(
+        cpu_max=cpu_max,
+        mem_max=mem_max,
+        disk_max=disk_max,
+        battery_min=battery_min,
+        battery_health_min=battery_health_min,
+    )
+    snap = build_snapshot()
+    level, issues = evaluate_snapshot(snap, thresholds)
+    snap.overall = level
+    snap.issues = issues
+    _emit(snap, format)
+    raise typer.Exit(code=exit_code_for(level))
 
 
 @app.command()
