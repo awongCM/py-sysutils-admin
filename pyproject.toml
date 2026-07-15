@@ -24,9 +24,6 @@ dev = [
 [project.scripts]
 pysysutils = "pysysutils.cli:app"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pysysutils"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

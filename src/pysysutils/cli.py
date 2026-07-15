@@ -1,10 +1,13 @@
 import io
+import sys
 import time
 
 import typer
 from rich.console import Console
 from rich.live import Live
 
+from pysysutils.collectors.battery_health import collect_battery_health
+from pysysutils.collectors.battery_status import collect_battery_status
 from pysysutils.collectors.cpu import collect_cpu
 from pysysutils.collectors.disk import collect_disk
 from pysysutils.collectors.memory import collect_memory
@@ -20,7 +23,9 @@ from pysysutils.formatters.table import (
     _render_processes,
     render_snapshot,
 )
+from pysysutils.health import exit_code_for, thresholds_from_cli
 from pysysutils.models import (
+    BatteryHealthSnapshot,
     BatterySnapshot,
     CpuSnapshot,
     DiskSnapshot,
@@ -31,34 +36,50 @@ from pysysutils.models import (
 )
 from pysysutils.snapshot import build_snapshot
 
+VALID_FORMATS = frozenset({"table", "json"})
+
 app = typer.Typer(no_args_is_help=True, help="Cross-platform machine health monitor")
 console = Console()
+stderr_console = Console(file=sys.stderr)
 
 
-def _emit_table(obj: object) -> None:
+def _validate_format(format: str) -> str:
+    if format not in VALID_FORMATS:
+        raise typer.BadParameter(f"format must be one of: {', '.join(sorted(VALID_FORMATS))}")
+    return format
+
+
+def _validate_percent(value: float | None, name: str) -> float | None:
+    if value is not None and not 0 <= value <= 100:
+        raise typer.BadParameter(f"{name} must be between 0 and 100")
+    return value
+
+
+def _emit_table(obj: object, out: Console) -> None:
     if isinstance(obj, SystemSnapshot):
-        render_snapshot(obj, console=console)
+        render_snapshot(obj, console=out)
     elif isinstance(obj, CpuSnapshot):
-        console.print(_render_cpu(obj))
+        out.print(_render_cpu(obj))
     elif isinstance(obj, MemorySnapshot):
-        console.print(_render_memory(obj))
+        out.print(_render_memory(obj))
     elif isinstance(obj, DiskSnapshot):
-        console.print(_render_disk(obj))
+        out.print(_render_disk(obj))
     elif isinstance(obj, NetworkSnapshot):
-        console.print(_render_network(obj))
+        out.print(_render_network(obj))
     elif isinstance(obj, ProcessSnapshot):
-        console.print(_render_processes(obj))
+        out.print(_render_processes(obj))
     elif isinstance(obj, BatterySnapshot):
-        console.print(_render_battery(obj))
+        out.print(_render_battery(obj))
     else:
-        console.print(str(obj))
+        out.print(str(obj))
 
 
-def _emit(obj: object, format: str) -> None:
+def _emit(obj: object, format: str, *, table_console: Console | None = None) -> None:
+    format = _validate_format(format)
     if format == "json":
-        console.print(to_json(obj))
+        print(to_json(obj))
     else:
-        _emit_table(obj)
+        _emit_table(obj, table_console or console)
 
 
 @app.command()
@@ -67,9 +88,10 @@ def snapshot(
     top: int = typer.Option(10, "--top", help="Number of top processes"),
 ):
     """Print a one-shot system health report."""
-    snap = build_snapshot(top=top)
+    format = _validate_format(format)
+    snap = build_snapshot(top=top, include_battery_health=True)
     if format == "json":
-        console.print(to_json(snap))
+        print(to_json(snap))
     else:
         render_snapshot(snap, console=console)
 
@@ -109,17 +131,62 @@ def network(format: str = typer.Option("table", "--format")):
 
 
 @app.command()
+def battery(
+    format: str = typer.Option("table", "--format"),
+    health: bool = typer.Option(False, "--health", help="Include battery health metrics"),
+):
+    """Show battery status and optional health details."""
+    snap = BatterySnapshot(
+        status=collect_battery_status(),
+        health=collect_battery_health(use_cache=False) if health else BatteryHealthSnapshot(
+            False, None, None, None, None, None
+        ),
+    )
+    _emit(snap, format)
+
+
+@app.command()
+def check(
+    format: str = typer.Option("table", "--format"),
+    cpu_max: float | None = typer.Option(None, "--cpu-max"),
+    mem_max: float | None = typer.Option(None, "--mem-max"),
+    disk_max: float | None = typer.Option(None, "--disk-max"),
+    battery_min: float | None = typer.Option(None, "--battery-min"),
+    battery_health_min: float | None = typer.Option(None, "--battery-health-min"),
+):
+    """Automation health gate with configurable thresholds and exit codes."""
+    format = _validate_format(format)
+    _validate_percent(cpu_max, "--cpu-max")
+    _validate_percent(mem_max, "--mem-max")
+    _validate_percent(disk_max, "--disk-max")
+    _validate_percent(battery_min, "--battery-min")
+    _validate_percent(battery_health_min, "--battery-health-min")
+
+    thresholds = thresholds_from_cli(
+        cpu_max=cpu_max,
+        mem_max=mem_max,
+        disk_max=disk_max,
+        battery_min=battery_min,
+        battery_health_min=battery_health_min,
+    )
+    snap = build_snapshot(include_battery_health=True, thresholds=thresholds)
+    _emit(snap, format, table_console=stderr_console if format == "table" else None)
+    raise typer.Exit(code=exit_code_for(snap.overall))
+
+
+@app.command()
 def watch(
     interval: float = typer.Option(2.0, "--interval"),
     format: str = typer.Option("table", "--format"),
     top: int = typer.Option(10, "--top"),
 ):
     """Live refreshing system dashboard."""
+    format = _validate_format(format)
     try:
         if format == "json":
             while True:
                 snap = build_snapshot(top=top)
-                console.print(to_json(snap))
+                print(to_json(snap))
                 time.sleep(interval)
         else:
             with Live(console=console, refresh_per_second=4) as live:

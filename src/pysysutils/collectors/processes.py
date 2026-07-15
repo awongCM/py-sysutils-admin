@@ -8,9 +8,12 @@ def collect_processes(top: int | None = 10, sort: str = "memory") -> ProcessSnap
     for proc in psutil.process_iter(attrs):
         try:
             info = proc.info
+            pid = info.get("pid")
+            if pid is None:
+                continue
             processes.append(
                 ProcessInfo(
-                    pid=info["pid"],
+                    pid=pid,
                     name=info.get("name") or "",
                     username=info.get("username"),
                     cpu_percent=info.get("cpu_percent"),

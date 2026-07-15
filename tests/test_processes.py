@@ -23,3 +23,11 @@ def test_collect_processes_skips_access_denied(mocker):
     mocker.patch("pysysutils.collectors.processes.psutil.process_iter", return_value=[proc])
     snap = collect_processes()
     assert snap.processes == []
+
+
+def test_collect_processes_skips_missing_pid(mocker):
+    proc = mocker.Mock()
+    proc.info = {"name": "orphan", "memory_percent": 1.0}
+    mocker.patch("pysysutils.collectors.processes.psutil.process_iter", return_value=[proc])
+    snap = collect_processes()
+    assert snap.processes == []
