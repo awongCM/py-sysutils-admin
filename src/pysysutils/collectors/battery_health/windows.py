@@ -9,22 +9,23 @@ from pysysutils.collectors.battery_health.base import BatteryHealthBackend
 from pysysutils.models import BatteryHealthSnapshot
 
 SUBPROCESS_TIMEOUT = 5
+_NOOP = BatteryHealthSnapshot(False, None, None, None, None, None)
 
 
 def _parse_battery_report(html: str) -> BatteryHealthSnapshot:
-    design_match = re.search(r"DESIGN CAPACITY\s*</td>\s*<td[^>]*>([\d,]+)\s*mWh", html, re.I)
-    full_match = re.search(r"FULL CHARGE CAPACITY\s*</td>\s*<td[^>]*>([\d,]+)\s*mWh", html, re.I)
-    cycle_match = re.search(r"CYCLE COUNT\s*</td>\s*<td[^>]*>([\d,]+)", html, re.I)
+    design_match = re.search(r"DESIGN\s+CAPACITY[\s\S]*?([\d,]+)\s*mWh", html, re.I)
+    full_match = re.search(r"FULL\s+CHARGE\s+CAPACITY[\s\S]*?([\d,]+)\s*mWh", html, re.I)
+    cycle_match = re.search(r"CYCLE\s+COUNT[\s\S]*?([\d,]+)", html, re.I)
 
     if not design_match or not full_match:
-        return BatteryHealthSnapshot(False, None, None, None, None, None)
+        return _NOOP
 
     design_mwh = int(design_match.group(1).replace(",", ""))
     full_mwh = int(full_match.group(1).replace(",", ""))
     cycle_count = int(cycle_match.group(1).replace(",", "")) if cycle_match else None
 
     if design_mwh <= 0:
-        return BatteryHealthSnapshot(False, None, None, None, None, None)
+        return _NOOP
 
     health_percent = round((full_mwh / design_mwh) * 100, 1)
     return BatteryHealthSnapshot(
@@ -39,6 +40,7 @@ def _parse_battery_report(html: str) -> BatteryHealthSnapshot:
 
 class WindowsBatteryHealthBackend(BatteryHealthBackend):
     def collect(self) -> BatteryHealthSnapshot:
+        output_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as tmp:
                 output_path = Path(tmp.name)
@@ -50,14 +52,14 @@ class WindowsBatteryHealthBackend(BatteryHealthBackend):
                 check=False,
             )
             if result.returncode != 0 or not output_path.exists():
-                return BatteryHealthSnapshot(False, None, None, None, None, None)
+                return _NOOP
             html = output_path.read_text(encoding="utf-8", errors="replace")
+            return _parse_battery_report(html)
         except (OSError, subprocess.TimeoutExpired):
-            return BatteryHealthSnapshot(False, None, None, None, None, None)
+            return _NOOP
         finally:
-            try:
-                output_path.unlink(missing_ok=True)  # type: ignore[possibly-undefined]
-            except OSError:
-                pass
-
-        return _parse_battery_report(html)
+            if output_path is not None:
+                try:
+                    output_path.unlink(missing_ok=True)
+                except OSError:
+                    pass

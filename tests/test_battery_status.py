@@ -20,3 +20,11 @@ def test_battery_present(mocker):
 
 def test_format_secsleft_unknown():
     assert format_secsleft(psutil.POWER_TIME_UNKNOWN) == "unknown"
+
+
+def test_format_secsleft_unlimited():
+    assert format_secsleft(psutil.POWER_TIME_UNLIMITED) == "charging"
+
+
+def test_format_secsleft_duration():
+    assert format_secsleft(3661) == "1h 1m"

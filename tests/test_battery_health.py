@@ -16,6 +16,20 @@ def test_linux_backend_parses_sysfs(tmp_path, mocker):
     assert snap.cycle_count == 412
 
 
+def test_linux_backend_picks_worst_battery(tmp_path, mocker):
+    bat0 = tmp_path / "BAT0"
+    bat0.mkdir()
+    (bat0 / "energy_full_design").write_text("50000000\n")
+    (bat0 / "energy_full").write_text("45000000\n")
+    bat1 = tmp_path / "BAT1"
+    bat1.mkdir()
+    (bat1 / "energy_full_design").write_text("50000000\n")
+    (bat1 / "energy_full").write_text("40000000\n")
+    mocker.patch("pysysutils.collectors.battery_health.linux._sysfs_root", return_value=tmp_path)
+    snap = LinuxBatteryHealthBackend().collect()
+    assert snap.health_percent == 80.0
+
+
 def test_darwin_backend_parses_ioreg(mocker):
     ioreg_output = '''
     "AppleSmartBattery" = {
@@ -32,6 +46,7 @@ def test_darwin_backend_parses_ioreg(mocker):
     assert snap.available is True
     assert snap.health_percent == 87.0
     assert snap.cycle_count == 412
+    assert snap.design_capacity_mwh is None
 
 
 def test_parse_ioreg_missing_data():
@@ -59,6 +74,22 @@ def test_windows_backend_parses_html(mocker):
     assert snap.available is True
     assert snap.health_percent == 87.0
     assert snap.cycle_count == 412
+
+
+def test_windows_backend_tempfile_failure(mocker):
+    mocker.patch("tempfile.NamedTemporaryFile", side_effect=OSError("no space"))
+    snap = WindowsBatteryHealthBackend().collect()
+    assert snap.available is False
+
+
+def test_parse_battery_report_span_markup():
+    html = """
+    <span>DESIGN CAPACITY</span></td><td><span>50,000 mWh</span>
+    <span>FULL CHARGE CAPACITY</span></td><td><span>43,500 mWh</span>
+    """
+    snap = _parse_battery_report(html)
+    assert snap.available is True
+    assert snap.health_percent == 87.0
 
 
 def test_parse_battery_report_missing():

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from typer.testing import CliRunner
 from pysysutils.cli import app
+from pysysutils.health import HealthThresholds, evaluate_snapshot
 from pysysutils.models import (
     BatteryHealthSnapshot,
     BatterySnapshot,
@@ -35,6 +36,14 @@ def _system_snapshot(overall: HealthLevel = HealthLevel.HEALTHY, memory_percent:
     )
 
 
+def _evaluated_snapshot(**kwargs) -> SystemSnapshot:
+    snap = _system_snapshot(**kwargs)
+    level, issues = evaluate_snapshot(snap, HealthThresholds())
+    snap.overall = level
+    snap.issues = issues
+    return snap
+
+
 def test_cli_help():
     runner = CliRunner()
     result = runner.invoke(app, ["--help"])
@@ -45,13 +54,16 @@ def test_cli_help():
 
 
 def test_cpu_json(mocker):
-    from pysysutils.models import CpuSnapshot
-
     mocker.patch("pysysutils.cli.collect_cpu", return_value=CpuSnapshot(1.0, None, 1, 1))
     runner = CliRunner()
     result = runner.invoke(app, ["cpu", "--format", "json"])
     assert result.exit_code == 0
     assert "percent" in result.stdout
+
+
+def test_invalid_format_rejected():
+    result = CliRunner().invoke(app, ["cpu", "--format", "xml"])
+    assert result.exit_code != 0
 
 
 def test_battery_command_with_health(mocker):
@@ -69,16 +81,48 @@ def test_battery_command_with_health(mocker):
 
 
 def test_check_healthy_exits_0(mocker):
-    mocker.patch("pysysutils.cli.build_snapshot", return_value=_system_snapshot())
-    mocker.patch("pysysutils.cli.evaluate_snapshot", return_value=(HealthLevel.HEALTHY, []))
+    mocker.patch("pysysutils.cli.build_snapshot", return_value=_evaluated_snapshot())
     result = CliRunner().invoke(app, ["check"])
     assert result.exit_code == 0
 
 
+def test_check_warning_exits_1(mocker):
+    mocker.patch("pysysutils.cli.build_snapshot", return_value=_evaluated_snapshot(memory_percent=86.0))
+    result = CliRunner().invoke(app, ["check"])
+    assert result.exit_code == 1
+
+
 def test_check_critical_exits_2(mocker):
-    mocker.patch("pysysutils.cli.build_snapshot", return_value=_system_snapshot(memory_percent=96.0))
+    mocker.patch("pysysutils.cli.build_snapshot", return_value=_evaluated_snapshot(memory_percent=96.0))
     result = CliRunner().invoke(app, ["check"])
     assert result.exit_code == 2
+
+
+def test_check_json_writes_stdout(mocker):
+    mocker.patch("pysysutils.cli.build_snapshot", return_value=_evaluated_snapshot())
+    result = CliRunner().invoke(app, ["check", "--format", "json"])
+    assert result.exit_code == 0
+    assert "overall" in result.stdout
+    assert result.stderr == ""
+
+
+def test_check_table_writes_stderr(mocker):
+    import io
+
+    from rich.console import Console
+    from pysysutils import cli
+
+    buf = io.StringIO()
+    mocker.patch.object(cli, "stderr_console", Console(file=buf, force_terminal=True, width=120))
+    mocker.patch("pysysutils.cli.build_snapshot", return_value=_evaluated_snapshot())
+    result = CliRunner().invoke(app, ["check"])
+    assert result.exit_code == 0
+    assert "Overall" in buf.getvalue()
+
+
+def test_check_invalid_threshold():
+    result = CliRunner().invoke(app, ["check", "--cpu-max", "150"])
+    assert result.exit_code != 0
 
 
 def test_watch_json_interrupts(mocker):

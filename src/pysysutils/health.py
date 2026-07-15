@@ -19,6 +19,7 @@ class HealthThresholds:
     battery_charge_critical: float = 10.0
     battery_health_warning: float = 80.0
     battery_health_critical: float = 60.0
+    battery_min_floor: float | None = None
 
 
 def _level_for_high(value: float, warning: float, critical: float) -> HealthLevel:
@@ -37,9 +38,24 @@ def _level_for_low(value: float, warning: float, critical: float) -> HealthLevel
     return HealthLevel.HEALTHY
 
 
+def _battery_charge_level(percent: float, thresholds: HealthThresholds) -> HealthLevel:
+    if thresholds.battery_min_floor is not None:
+        if percent >= thresholds.battery_min_floor:
+            return HealthLevel.HEALTHY
+        return HealthLevel.CRITICAL
+    return _level_for_low(
+        percent,
+        thresholds.battery_charge_warning,
+        thresholds.battery_charge_critical,
+    )
+
+
 def _max_level(*levels: HealthLevel) -> HealthLevel:
-    order = {HealthLevel.HEALTHY: 0, HealthLevel.WARNING: 1, HealthLevel.CRITICAL: 2}
-    return max(levels, key=lambda level: order[level])
+    order = {HealthLevel.HEALTHY: 0, HealthLevel.WARNING: 1, HealthLevel.CRITICAL: 2, HealthLevel.SKIPPED: -1}
+    active = [level for level in levels if level != HealthLevel.SKIPPED]
+    if not active:
+        return HealthLevel.HEALTHY
+    return max(active, key=lambda level: order[level])
 
 
 def evaluate_snapshot(snap: SystemSnapshot, thresholds: HealthThresholds) -> tuple[HealthLevel, list[str]]:
@@ -81,17 +97,21 @@ def evaluate_snapshot(snap: SystemSnapshot, thresholds: HealthThresholds) -> tup
             )
 
     if snap.battery.status.present:
-        if snap.battery.status.percent is not None and snap.battery.status.power_plugged is False:
-            bat_level = _level_for_low(
-                snap.battery.status.percent,
-                thresholds.battery_charge_warning,
-                thresholds.battery_charge_critical,
-            )
+        if snap.battery.status.percent is not None and snap.battery.status.power_plugged is not True:
+            bat_level = _battery_charge_level(snap.battery.status.percent, thresholds)
             levels.append(bat_level)
             if bat_level != HealthLevel.HEALTHY:
+                threshold = (
+                    thresholds.battery_min_floor
+                    if thresholds.battery_min_floor is not None
+                    else (
+                        thresholds.battery_charge_critical
+                        if bat_level == HealthLevel.CRITICAL
+                        else thresholds.battery_charge_warning
+                    )
+                )
                 issues.append(
-                    f"Battery charge at {snap.battery.status.percent:.0f}% ({bat_level.value} threshold: "
-                    f"{thresholds.battery_charge_critical if bat_level == HealthLevel.CRITICAL else thresholds.battery_charge_warning}%)"
+                    f"Battery charge at {snap.battery.status.percent:.0f}% ({bat_level.value} threshold: {threshold}%)"
                 )
 
         if snap.battery.health.available and snap.battery.health.health_percent is not None:
@@ -106,8 +126,10 @@ def evaluate_snapshot(snap: SystemSnapshot, thresholds: HealthThresholds) -> tup
                     f"Battery health at {snap.battery.health.health_percent:.0f}% ({health_level.value} threshold: "
                     f"{thresholds.battery_health_critical if health_level == HealthLevel.CRITICAL else thresholds.battery_health_warning}%)"
                 )
+    else:
+        levels.append(HealthLevel.SKIPPED)
 
-    overall = _max_level(*levels) if levels else HealthLevel.HEALTHY
+    overall = _max_level(*levels)
     return overall, issues
 
 
@@ -134,6 +156,7 @@ def thresholds_from_cli(
             thresholds,
             battery_charge_critical=battery_min,
             battery_charge_warning=min(battery_min + 10, 100),
+            battery_min_floor=battery_min,
         )
     if battery_health_min is not None:
         thresholds = replace(

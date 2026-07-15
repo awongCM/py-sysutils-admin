@@ -104,3 +104,36 @@ def test_thresholds_from_cli_cpu_max():
     thresholds = thresholds_from_cli(cpu_max=90.0)
     assert thresholds.cpu_critical == 90.0
     assert thresholds.cpu_warning == 80.0
+
+
+def test_battery_min_floor_healthy_above_minimum():
+    from pysysutils.health import HealthThresholds, evaluate_snapshot, thresholds_from_cli
+
+    snap = _minimal_snapshot(
+        battery=BatterySnapshot(
+            status=BatteryStatusSnapshot(True, 96.0, False, None, "x"),
+            health=BatteryHealthSnapshot(False, None, None, None, None, None),
+        ),
+    )
+    thresholds = thresholds_from_cli(battery_min=95.0)
+    level, issues = evaluate_snapshot(snap, thresholds)
+    assert level == HealthLevel.HEALTHY
+    assert issues == []
+
+
+def test_low_battery_with_unknown_plug_state_is_critical():
+    snap = _minimal_snapshot(
+        battery=BatterySnapshot(
+            status=BatteryStatusSnapshot(True, 5.0, None, None, "unknown"),
+            health=BatteryHealthSnapshot(False, None, None, None, None, None),
+        ),
+    )
+    level, issues = evaluate_snapshot(snap, HealthThresholds())
+    assert level == HealthLevel.CRITICAL
+    assert any("Battery charge" in issue for issue in issues)
+
+
+def test_cpu_warning_boundary():
+    snap = _minimal_snapshot(cpu=CpuSnapshot(percent=85.0, per_cpu=None, count_logical=4, count_physical=2))
+    level, _ = evaluate_snapshot(snap, HealthThresholds())
+    assert level == HealthLevel.WARNING

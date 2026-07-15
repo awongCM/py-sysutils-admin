@@ -21,13 +21,18 @@ from pysysutils.models import (
 def _collect_battery(include_health: bool = True) -> BatterySnapshot:
     return BatterySnapshot(
         status=collect_battery_status(),
-        health=collect_battery_health() if include_health else BatteryHealthSnapshot(
+        health=collect_battery_health(use_cache=include_health) if include_health else BatteryHealthSnapshot(
             False, None, None, None, None, None
         ),
     )
 
 
-def build_snapshot(top: int = 10, include_battery_health: bool = True) -> SystemSnapshot:
+def build_snapshot(
+    top: int = 10,
+    include_battery_health: bool = False,
+    evaluate: bool = True,
+    thresholds: HealthThresholds | None = None,
+) -> SystemSnapshot:
     snap = SystemSnapshot(
         timestamp=datetime.now(timezone.utc),
         platform=sys.platform,
@@ -41,7 +46,8 @@ def build_snapshot(top: int = 10, include_battery_health: bool = True) -> System
         overall=HealthLevel.HEALTHY,
         issues=[],
     )
-    overall, issues = evaluate_snapshot(snap, HealthThresholds())
-    snap.overall = overall
-    snap.issues = issues
+    if evaluate:
+        overall, issues = evaluate_snapshot(snap, thresholds or HealthThresholds())
+        snap.overall = overall
+        snap.issues = issues
     return snap
